@@ -64,27 +64,285 @@ Live Restore Enabled: true
 
 ```
 
+# 第 3 章 Docker 镜像
+
+## 3.1 镜像的内部结构
+
+### 3.1.1 hello-world
+
+1. 拉取最小镜像——hello-world
+
+   ```bash
+   # 拉取 hello-world镜像
+   docker pull hello-world
+   
+   # 查看
+   docker images hello-world
+   
+   # 运行
+   docker run hello-world
+   ```
+
+2. hello-world 的 Dockerfile
+
+   ```bash
+   FROM scratch
+   COPY hello /
+   CMD ["/hello"]
+   ```
 
 
-### hello-world
 
+### 3.1.2 bash 镜像
+
+- 不依赖其他镜像，从 scratch 构建
+- 其他镜像可以以之为基础进行扩展
+- 通常是各种 Linux 发行版的 Docker 镜像，如Ubuntu、Debian、CentOS等
+
+```bash
+# 下载一个 bash 镜像
+docker pull centos
+
+# 查看镜像描述：REPOSITORY TAG ID CREATED SIZE
+docker images centos
 ```
-[root@i ~]# docker pull hello-world
 
+1. rootfs
+
+   包含 /dev、/proc、/bin 等目录。内核空间是 kernel ( bootfs文件系统，Linux 刚启动时会加载 bootfs 文件系统，之后bootfs 会被卸载掉 )。
+
+   base 镜像底层使用 Docker Host 的 kernel (bootfs)，本身提供 rootfs。
+
+2. base 镜像提供最小安装的 Linux 发行版本
+
+   CentOS 镜像的 Dockerfile：
+
+   ```bash
+   FROM scratch
+   ADD centos-7-docker.tar.xz /
+   CMD ["/bin/bash"]
+   ```
+
+   ADD ： 添加 CentOS 7 rootfs 的 tar 包。制作镜像时，tar 会自动解压到 / 目录下，生成 /dev、/proc、/bin 。
+
+3. 支持运行多种 Linux OS 
+
+   - Ubuntu 14.04： 使用 upstart 管理服务，apt 管理软件包
+
+   - CentOS 7：使用 systemd 和 yum
+
+   - Debian、BusyBox ( 一种嵌入式 Linux ) 
+
+### 3.1.3 镜像分层
+
+1. Docker 支持通过扩展现有镜像，创建新的镜像：
+
+   新镜像是从 base 镜像一层层叠加生成的。每安装一个软件，就在现有镜像的基础上增加一层。
+
+2. 共享资源：
+
+   镜像的每一层都可以被共享，源于 Copy-on-Write 特性。
+
+3. Copy-on-Write 特性：
+
+		所有对容器的改动，无论添加、删除，还是修改文件都只会发生在容器层中。只有容器层是可写的，容器层下面的所有镜像层都是只读的。
+
+## 3.2 如何构建镜像?
+
+### 3.2.1 docker commit
+
+```bash
+docker commit [OPTIONS] CONTAINER [REPOSITORY[:TAG]]
 ```
 
+OPTIONS说明：
 
+- **-a :**提交的镜像作者；
+- **-c :**使用Dockerfile指令来创建镜像；
+- **-m :**提交时的说明文字；
+- **-p :**在commit时，将容器暂停。
 
-## 如何创建镜像?
+**实例1：**进入容器，修改，并保存为新镜像
+```bash
+# 1. 运行，并进入容器
+docker run -it ubuntu
 
+# 2. 修改容器，比如安装 vi
+apt-get install -y vim
+
+# 3. 打开新的 host 端口，查看运行中的<容器名>
+docker ps
+
+# 4. 保存为新镜像
+docker commit <容器名> <新的容器名>
+
+# 5. 进入新镜像，查看vi
+docker run -it <新的容器名>
+which vi
 ```
 
+**实例2：** 将容器直接保存为新镜像
 
+```bash
+# 将容器 a404c6c174a2 保存为新的镜像，并添加提交人信息 "Spade_" 和说明信息 "my apache"，版本仓为 mymysql:v1 
+root@CentOS:~$ docker commit -a "Spade_" -m "my apache" a404c6c174a2  mymysql:v1 
+sha256:37af1236adef1544e8886be23010b66577647a40bc02c0885a6600b33ee28057
+
+# 查看 mymysql:v1
+root@CentOS:~$ docker images mymysql:v1
+REPOSITORY          TAG                 IMAGE ID            CREATED             SIZE
+mymysql             v1                  37af1236adef        15 seconds ago      329 MB
 ```
 
+### 3.2.2 Dockerfile
+
+1. 创建自己的 Dockerfile
+
+   ```bash
+   vim Dockerfile
+   # 添加如下内容：
+   FROM ubuntu
+   RUN apt-get update && apt-get install -y vim
+   ```
+
+2.  docker build
+
+   ```bash
+   # 构建镜像，命名为 "ubuntu-with-vi-dockerfile"，"." 当前目录
+   docker build -t ubuntu-with-vi-dockerfile .
+   ```
+
+3. 执行步骤
+
+   1) 执行FROM，选择基础镜像
+
+   2) 执行RUN，安装软件 -> 启动临时容器 -> 将容器保存为镜像 ( 实际上是 docker commit ，会生成一个镜像ID ) -> 创建容器ID -> 删除临时容器 -> 构建成功
+
+### 3.2.3 镜像的特性
+
+1. 分层结构
+
+   ```bash
+   # 查看 ubuntu 镜像的分层
+   docker history ubuntu
+   
+   # 查看 ubuntu-with-vi-dockerfile 镜像的分层
+   docker history ubuntu-with-vi-dockerfile
+   ```
+
+   注意：missing 表示无法获取 IMAGE ID，通常从 Docker Hub 下载的镜像会有这个问题。
+
+2. 缓存特性
+
+   - Docker 会缓存已有镜像的镜像层，构建新镜像时，如果某镜像层已经存在，就直接使用，无需重新创建。
+
+   - `docker build --no-cache` 可以取消构建镜像时使用缓存的机制。
+
+   - Dockerfile 中每一个指令都会创建一个镜像层，上层是依赖于下层的。无论什么时候，只要某一层发生变化，其上面所有层的缓存都会失败。
 
 
-## 如何分发镜像?
+### 3.2.4 调试 Dockerfile
+
+总结一下通过 Dockerfile 构建镜像的过程：
+
+   (1) 从 base 镜像运行一个容器。
+
+   (2) 执行一条指令，对容器做修改。
+
+   (3) 执行类似 docker commit 的操作，生成一个新的镜像层。
+
+   (4) Docker 再给予刚刚提交的镜像运行一个新的容器。
+
+   (5) 重复 2-4 步，直到 Dockerfile 中的所有指令执行完毕。
+
+如果 Dockerfile 由于某种原因执行到某个指令失败了，我们也将能够得到前一个指令成功构建出的镜像，这对调试 Dockerfile 非常有帮助。
+
+**调试例子：**
+
+```bash
+# 编写 Dockerfile
+vim Dockerfile
+# 添加如下内容：
+FROM busybox
+RUN touch tmpfile
+RUN /bin/bash -c echo "continue to build..."
+COPY testfile /
+
+# debug 显示调试过程
+docker build -t image-debug
+`第二步 touch tmpfile 执行成功之后，会返回一个镜像 ID`
+
+# 调试
+docker run -it <镜像 ID>
+RUN /bin/bash -c echo "continue to build..."
+`发现busybox 镜像中没有 bash `
+```
+
+**Dockerfile 常用指令：**
+
+- FROM：指定 bash 镜像。
+
+- MAINTARNER：设置镜像的作者，任意字符串。
+
+- COPY：将文件从 build context 复制到镜像。`COPY src dest` 或 `COPY ["src", "dest"]`，src 只能指定 build context 中的文件或目录。
+
+- ADD：与COPY类似，从 build context 复制文件到镜像。不同的是，如果 src 是归档文件 (tar、zip、tgz、xz 等)，文件会被自动解压到 dest。
+
+- ENV：设置环境变量，环境变量可被后面的指令使用。例如：
+
+  > ENV MY_VERSION 1.3 RUN apt-get install -y mypackage=$MY_VERSION
+
+- EXPOSE：指定容器中的进程会监听某个端口，Docker 可以将该端口暴露出来。
+
+- VOLUME：将文件或目录声明为 volume。
+
+- WORKDIR：为后面的 RUN、CMD、ENTERPOINT、ADD 或 COPY 指令设置镜像中的当前工作目录。
+
+- RUN：在容器中运行指定的命令。
+
+- CMD：容器启动时运行指定的命令。多个CMD只有最后一个生效。CMD 可以被 docker run 之后的参数替换。
+
+- ENTERPOINT：设置容器启动时运行的命令。多个ENTERPOINT只有最后一个生效。CMD 或 docker run 之后的参数会被当做参数传递给 ENTERPOINT。
+
+  1) **Dockerfile示例：**
+
+  ```bash
+  FROM busybox	# 执行 bash 镜像为 busybox (一种嵌入式Linux系统)
+  MAINTAINER spade_	# 镜像的作者
+  WORKDIR /testdir	# 工作目录，不存在则 Docker 会自动创建
+  RUN touch tmpfile1	# 运行命令
+  COPY ["tmpfile2", "."]		# 复制 tmpfile2 到"." 当前目录
+  ADD ["bunch.tar.gz", "."] 	# 解压 bunch.tar.gz 到 "." 当前目录
+  ENV WELCOME "You are in my container, welcome! "	# 设置一个字符串环境变量 WELCOME 
+  ```
+
+  2) 构建镜像
+
+  ```bash
+  root@ubuntu:~# ls
+  Dockerfile bunch.tar.gz tmpfile2
+  
+  # my-image 是镜像名
+  root@ubuntu:~# docker build -t my-image .
+  ...
+  ```
+
+  3) 运行容器，验证镜像内容
+
+  ```bash
+  root@ubuntu:~# docker run -it my-image
+  /testdir #
+  /testdir # ls 				
+  bunch tmpfile1 tmpfile2
+  /testdir # echo $WELCOME		# 输出 Dockerfile 设置的环境变量
+  You are in my container, welcome! 
+  ```
+
+## 3.3 RUN vs CMD vs ENTERPOINT
+
+——————
+
+## 3.4 如何分发镜像?
 
 1. 用相同的 Dockerfile 在其他 host 构建镜像。
 
@@ -98,41 +356,32 @@ Live Restore Enabled: true
 
 3. 搭建私有的 Registry
 
+### 3.4.1 镜像名
 
-
-## 常用命令
-
-```bash
-docker build -t 镜像名
-
+   ```bash
+# 镜像名
+[image name] = [repository]:[tag]
+   
+# 构建一个镜像
+   docker build -t <镜像名>
+   
 # 查看镜像信息
 docker images <镜像名>
-[image name] = [repository]:[tag]
-
+   
 # docker build 默认tag使用latest
 docker build -t <镜像名>:<latest>
+   ```
 
-```
+   ```bash
+# repository 的完整格式， 只有 Docker Hub 上的镜像可以省略 registry-host:[port]
+[registry-host]:[port]/[username]/[image name]:[tag]
+   ```
 
-- `images`：显示镜像列表。
+### 3.4.2 tag
 
-- `history`：显示镜像构建历史。
+我们知道: `[image name] = [repository]:[tag]`， 那么我们如何指定tag?
 
-- `commit`：从容器创建新镜像。
-
-- `tag`：给镜像打 tag。
-
-- `pull`：从 registry 下载镜像。
-
-- `push`：将镜像上传到 registry。
-
-- `rmi`：删除 Docker host 中的镜像。
-
-- `search`：搜索 Docker host 中的镜像。
-
-  
-
-## 如何指定tag？
+假设目前发布了一个镜像 **myimage**，版本为 v1.9.1，我们可以打上 4 个 tag：1.9.1、1.9、1 和 latest。
 
 (1) myimage:1 始终指向 1 这个分支中最新的镜像。
 
@@ -143,7 +392,7 @@ docker build -t <镜像名>:<latest>
 (4) 如果想使用特定版本，可以选择myiamge:1.9.1、myiamge:1.9.2 或 myiamge:2.0.0
 
 ```bash
-# 给版本v1.9.1的镜像 `myimage` 打tag，示例
+# 给版本v1.9.1的镜像 `myimage` 打tag
 docker tag myimage-v1.9.1 myiamge:1 
 docker tag myimage-v1.9.1 myiamge:1.9
 docker tag myimage-v1.9.1 myiamge:1.9.1
@@ -162,18 +411,34 @@ docker tag myimage-v2.0.0 myiamge:2.0.0
 docker tag myimage-v2.0.0 myiamge:latest
 ```
 
+### 3.4.3 使用公共 Registry 
+
+——————
+
+### 3.4.4 搭建本地 Registry 
+
+——————
+
+## 3.5 小结-常用命令
+
+- `images`：显示镜像列表。
+
+- `history`：显示镜像构建历史。
+
+- `commit`：从容器创建新镜像。
+
+- `tag`：给镜像打 tag。
+
+- `pull`：从 registry 下载镜像。
+
+- `push`：将镜像上传到 registry。
+
+- `rmi`：删除 Docker host 中的镜像。
+
+- `search`：搜索 Docker host 中的镜像。
 
 
-```
-# repository 的完整格式， 只有 Docker Hub 上的镜像可以省略 registry-host:[port]
-[registry-host]:[port]/[username]/[image name]:[tag]
-
-
-```
-
-
-
-# 第4章 Docker容器
+# 第 4 章 Docker容器
 
 **指定容器**
 ```
@@ -217,7 +482,6 @@ docker container ls [-a]
 
 # 查看启动命令的输出， -f 类似 tail -f ，持续打印输出
 docker logs -f <container>
-
 ```
 
 - `create`：创建容器
@@ -383,7 +647,7 @@ namespace 使得每个容器认为自己拥有文件系统、网卡等独立的�
 - User namespace ： 容器能够管理自己的用户，host 不能看到容器中创建的用户。 容器可以使用`useradd 用户名` 创建用户。
 
 
-# 第5章 Docker 网络
+# 第 5 章 Docker 网络
 
 
 `docker network ls` 查看 host 上的网络，Docker 安装时会自动创建 bridge、host、null 三个网络。
@@ -486,8 +750,6 @@ docker network connect my_net2 < 容器2的 "短ID" >
 ping -c 3 xxx.xxx.xxx.xxx
 ```
 
-
-
 ## 5.5 容器间通信
 
 ### 1. 同一网卡通信
@@ -542,7 +804,7 @@ cat index.html
 
 2. 外部世界访问容器 —— 端口映射
 
- # 第6章 Docker 存储
+ # 第 6 章 Docker 存储
 
 **storage driver** ：容器的运行时存储工作数据的一层，容器退出时会被删除。适合无状态（不需要持久化存储数据）的应用，随时可以从镜像直接创建。
 
@@ -610,18 +872,6 @@ macvLAN （虚拟局域网)
 
 ​	sub-interface
 
+​	
+
 ​	Trunk口
-
-
-
-flannel
-
-​	vxlan
-
-​	
-
-​	host-gw
-
-​	无DNS服务，容器无法通过 hostname 通信
-
-​	
