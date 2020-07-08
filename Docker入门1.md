@@ -91,8 +91,6 @@ Live Restore Enabled: true
    CMD ["/hello"]
    ```
 
-
-
 ### 3.1.2 bash 镜像
 
 - 不依赖其他镜像，从 scratch 构建
@@ -278,7 +276,7 @@ RUN /bin/bash -c echo "continue to build..."
 `发现busybox 镜像中没有 bash `
 ```
 
-**Dockerfile 常用指令：**
+### 3.4.5 Dockerfile 常用指令
 
 - FROM：指定 bash 镜像。
 
@@ -300,11 +298,13 @@ RUN /bin/bash -c echo "continue to build..."
 
 - RUN：在容器中运行指定的命令。
 
-- CMD：容器启动时运行指定的命令。多个CMD只有最后一个生效。CMD 可以被 docker run 之后的参数替换。
+- CMD：容器启动时运行指定的命令。多个CMD只有最后一个生效。**CMD 可以被 docker run 之后的参数替换。**
 
-- ENTERPOINT：设置容器启动时运行的命令。多个ENTERPOINT只有最后一个生效。CMD 或 docker run 之后的参数会被当做参数传递给 ENTERPOINT。
+- ENTERPOINT：设置容器启动时运行的命令。多个ENTERPOINT只有最后一个生效。**CMD 或 docker run 之后的参数会被当做参数传递给 ENTERPOINT**。
 
-  1) **Dockerfile示例：**
+### 3.4.6 Dockerfile 示例
+
+  1) 编写 Dockerfile ( `vim Dockerfile` )
 
   ```bash
   FROM busybox	# 执行 bash 镜像为 busybox (一种嵌入式Linux系统)
@@ -340,7 +340,176 @@ RUN /bin/bash -c echo "continue to build..."
 
 ## 3.3 RUN vs CMD vs ENTERPOINT
 
-——————
+(1) RUN：执行命令并创建镜像层，RUN 经常用于安装软件包。
+
+(2) CMD：设置容器启动后默认执行的命令及其参数，但 CMD 能够被 docker run 后面跟的命令行参数替换。
+
+(3) ENTRYPOINT：配置容器启动时运行的命令。
+
+### 3.3.1 Shell 和 Exec格式
+
+#### Shell 格式
+
+```bash
+<instruction> <command>
+```
+
+例如：
+
+```bash
+RUN apt-get install python3
+CMD echo "Hello World"
+ENTRYPOINT echo "Hello World"
+```
+
+**当指令执行时，shell 格式底层会调用 `/bin/sh -c [command]`。**例如下面的 Dockerfile 片段：
+
+```bash
+ENV name Spade_		# ENV 指令用于设置环境变量，环境变量可以被后面的指令调用
+ENTRYPOINT echo "Hello, $name"	# 调用环境变量 name
+```
+
+执行 docker run [image] 将输出：
+
+```bash
+Hello, Spade_	# 环境变量 name 已经被值 Spade_ 替换
+```
+
+#### Exec 格式
+
+```bash
+<instruction> ["executable", "param1", "param2", ...]
+```
+
+例如：
+
+```bash
+RUN ["apt-get", "install", "python3"]
+CMD ["/bin/echo", "Hello World"]
+ENTRYPOINT ["/bin/echo", "Hello World"]
+```
+
+**当指令执行时，会直接调用 [command]，不会被 shell 解析。**
+
+例如下面的 Dockerfile 片段：
+
+```bash
+ENV name Spade_ 
+ENTRYPOINT ["/bin/echo", "Hello, $name"]
+```
+
+运行容器将输出:
+
+```bash
+Hello, $name
+```
+
+注意：**环境变量 name 没有被替换。**
+
+如果希望使用环境变量，做如下修改 Dockerfile：
+
+```bash
+
+```
+
+运行容器将输出:
+
+```bash
+Hello, $name
+```
+
+#### 二者区别
+
+Shell 格式：**当指令执行时，shell 格式底层会调用 `/bin/sh -c [command]`。**
+
+Exec 格式：**当指令执行时，会直接调用 [command]，不会被 shell 解析。**若需要使用环境变量，需要添加 `-c` 参数。
+
+CMD 和 ENTRYPOINT 推荐使用 Exec 格式，因为指令可读性更强，更容易理解。RUN 则两种格式都可以。
+
+### 3.3.2 RUN
+
+RUN 常用于安装应用和软件包。
+
+RUN 在当前镜像的顶部执行命令，并创建新的镜像层。Dockerfile 中常常包含多个 RUN 指令。
+
+RUN 有两种格式：
+
+(1) Shell 格式：RUN
+
+(2) Exec 格式：RUN  ["executable", "param1", "param2"]
+
+使用 RUN 安装多个**最新版**包的例子：
+
+```bash
+RUN apt-get update && apt-get install -y \bzr\cvs\git\mercurial\subversion
+```
+
+### 3.3.3 CMD
+
+CMD 指令允许用户指定容器默认执行的命令。
+
+此命令会在容器启动且 docker run 没有指定其他命令时运行。
+
+- 如果 docker run 指定了其他命令，CMD 指定的默认命令将被忽略。
+- 如果 Dockerfile 中有多个 CMD 指令，只有最后一个 CMD 有效。
+
+CMD 有三种格式：
+
+(1) Exec 格式：CMD  ["executable", "param1", "param2"]。 **推荐使用。**
+
+(2) Shell 格式：CMD command param1 param2
+
+(3) CMD ["param1", "param2"] 为 ENTRYPOINT 提供额外的参数，此时 ENTRYPOINT 必须使用 Exec 格式。
+
+CMD Dockerfile 片段：
+
+```bash
+CMD echo "Hello World"
+```
+
+运行容器 docker run -it [image] 将输出：
+
+```bash
+Hello World
+```
+
+运行容器 docker run -it [image]  /bin/bash, CMD 会被忽略掉，命令 bash 将被很执行：
+
+```bash
+root@10ds037c8458:/#
+```
+
+### 3.3.4 ENTRYPOINT
+
+ENTRYPOINT 指令可以让容器以应用程序或者服务的形式运行。
+
+ENTRYPOINT 看上去与 CMD 很像，它们都可以指定要执行的命令及其参数。不同的地方在于 ENTRYPOINT 不会被忽略，一定会被执行，即使运行 docker run 时执行了其他命令。
+
+- **多个 ENTRYPOINT 只有一个生效。**
+
+ENTRYPOINT 有两种格式：
+
+(1) Exec 格式：ENTRYPOINT ["executable", "param1", "param2"] 。这是 ENTRYPOINT 的**推荐格式**。ENTRYPOINT 中的参数始终会被使用，而 CMD 的额外参数可以在容器启动时动态替换掉。
+
+(2) Shell 格式：ENTRYPOINT command param1 param2。会忽略任何 CMD 或者 docker run 提供的参数。
+
+ENTRYPOINT Dockerfile 片段：
+
+```bash
+ENTRYPOINT ["/bin/echo", "Hello"] CMD ["World"]
+```
+
+docker run -it [image]
+
+```bash
+Hello World
+```
+
+docker run -it [image] Spade_
+
+```bash
+Hello Spade_
+```
 
 ## 3.4 如何分发镜像?
 
