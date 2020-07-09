@@ -614,12 +614,16 @@ docker tag myimage-v2.0.0 myiamge:latest
 # 指定容器
 <container> = "短ID" / "长ID" / "容器名称"
 ```
+
+## 4.1 容器常用命令
 ```bash
 # 创建容器
 docker create ...
 
 # 后台方式启动容器
 docker start <container>
+
+# 创建并运行容器
 docker run = docker create + docer start
 
 # 重启
@@ -641,7 +645,7 @@ docker container ls [-a]
 
 # 两种方法进入容器
 # 1. docker attach <container>("长ID")
-# 退出：Ctrl+p，如何Ctrl+q 退出attach终端
+# 退出：Ctrl+p，然后 Ctrl+q 退出attach终端
 # 2. docker exec -it <container>("短ID") bash|sh
 # 查看进程：ps -elf
 # 退出：exit
@@ -655,7 +659,11 @@ docker logs -f <container>
 
 - `create`：创建容器
 
+- `start`：启动容器
+
 - `run`：运行容器
+
+  docker run = docker create + docer start
 
   | Options | Mean                                               |
   | ------- | -------------------------------------------------- |
@@ -663,15 +671,19 @@ docker logs -f <container>
   | -t      | 为容器重新分配一个伪输入终端，通常与 -i 同时使用； |
   | -d      | 后台运行容器，并返回容器ID；                       |
 
-- `pause`：取消暂停继续运行容器
-
 - `stop`：发送SIGTERM停止容器
+
+- `restart`：重启容器，相当于 docker stop + docker start
+
+  **--restart=always**   无论容器以何种原因退出（包括正常退出），都立即重启。
+
+  **--restart=on-failure:3**，意思是如果启动进程退出代码非 0，则重启容器，最多重启 3 次。
 
 - `kill`：发送SIGKILL快速停止容器
 
-- `start`：启动容器
+- `pause`：暂停运行容器，暂停的容器不会占用 CPU 资源
 
-- `restart`：重启容器
+- `unpause`：继续运行容器
 
 - `attach`：attach 到容器启动进程的终端
 
@@ -679,9 +691,16 @@ docker logs -f <container>
 
 - `logs`：显示容器启动进程的控制台输出，用 "-f" 持续打印
 
-- `rm`：从磁盘中删除容器
+- `rm`：从磁盘中删除容器，可以删除不会再重启的容器，以减少占用 host 文件系统资源
 
-## 运行容器的最佳实践
+  ```bash
+  # 批量删除所有已经退出的容器
+  docker rm -v $(docker ps)
+  ```
+
+  注意： `docker rm` 是删除容器， `docker rmi` 是删除镜像。
+
+## 4.2 如何运行服务器/工具类容器
 
 ### 1. 服务器类容器
 
@@ -713,9 +732,9 @@ docker run -it <container>
 exit
 ```
 
-## 4.6 资源限制
+## 4.3 资源限制
 
-### 4.6.1 内存限额
+### 4.3.1 内存限额
 
 1. `-m` | `--memory`：设置内存的使用限额，例如 100MB，2GB。
 2.  `--memory-swap`：设置内存+swap 的使用限额，不指定则默认为 `-m` 的两倍。
@@ -727,7 +746,7 @@ exit
 docker run -it -m 200M --memory-swap=300M progrium/stress --vm 1 --vm-bytes 280M
 ```
 
-### 4.6.2 CPU 限额
+### 4.3.2 CPU 限额
 
 `-c` | `--cpu-shares`：设置 CPU 权重，不指定则默认值为 1024。
 
@@ -748,7 +767,7 @@ docker pause container_A
 top
 ```
 
-### 4.6.3 Block IO 带宽限额
+### 4.3.3 Block IO 带宽限额
 
 #### 1. block IO 权重
 
@@ -783,9 +802,9 @@ docker run -it ubuntu
 time dd if=/dev/zero of=test.out bs=1M count=800 oflag=direct
 ```
 
-### 4.7 实现容器的底层技术
+## 4.4 实现容器的底层技术
 
-#### 4.7.1 cgroup
+#### 4.4.1 cgroup
 
 /sys/fs/cgroup 保存了容器所有 cgroup 相关的配置
 
@@ -804,7 +823,7 @@ docker ps
 ls /sys/fs/cgroup/cpu/docker/容器 ID
 ```
 
-#### 4.7.2 namespace
+#### 4.4.2 namespace
 
 namespace 使得每个容器认为自己拥有文件系统、网卡等独立的资源。它管理着 host 中全局唯一的资源，实现了容器间资源的隔离。
 
